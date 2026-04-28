@@ -1,19 +1,28 @@
 import { exec, fullScreen, toast } from '../kernelsu.js'
 
 import { loadNavbar, setNavbar, whichCurrentPage } from './navbar.js'
+import { runMainPageTransition, runMiniPageEnter, runMiniPageLeave } from './animator.js'
 
 /* INFO: Prototypes */
 import utils from './utils.js'
 
+const moduleName = 'TreatWheel'
 const head = document.getElementsByTagName('head')[0]
+const miniPageRegex = /mini_(.*)_(.*)/
 
-export const allPages = [
+export const allMainPages = [
   'home',
   'actions',
   'settings'
 ]
 
+export const allMiniPages = []
+
+export const allPages = [ ...allMainPages, ...allMiniPages ]
+
 const loadedPageView = []
+/* INFO: Prevent overlapping page transitions when users tap navigation rapidly. */
+let isPageTransitioning = false
 /* INFO: Direct assignment would link both arrays. We do not want that. */
 const sufferedUpdate = [ ...allPages ]
 const pageReplacements = allPages.reduce((obj, pageId) => {
@@ -23,12 +32,24 @@ const pageReplacements = allPages.reduce((obj, pageId) => {
 }, {})
 
 async function loadHTML(pageId) {
-  return fetch(`js/pages/${pageId}/index.html`)
-    .then((response) => response.text())
-    .then((data) => {
-      return data
-    })
-    .catch(() => false)
+  if (miniPageRegex.test(pageId)) {
+    const miniPageIdData = miniPageRegex.exec(pageId)
+    const parentPage = miniPageIdData[1]
+    const miniPage = miniPageIdData[2]
+    return fetch(`js/pages/${parentPage}/minipage/${miniPage}/index.html`)
+      .then((response) => response.text())
+      .then((data) => {
+        return data
+      })
+      .catch(() => false)
+  } else {
+    return fetch(`js/pages/${pageId}/index.html`)
+      .then((response) => response.text())
+      .then((data) => {
+        return data
+      })
+      .catch(() => false)
+  }
 }
 
 async function hotReloadStrings(html, pageId) {
@@ -84,45 +105,134 @@ async function solveStrings(html, pageId) {
       }
     })
   } catch (e) {
-    toast(`Failed to load ${localStorage.getItem('language') || 'en_US'} strings. Entering safe mode.`)
+    toast(`Failed to load ${localStorage.getItem(`/${moduleName}/language`) || 'en_US'} strings. Entering safe mode.`)
   }
 
   /* INFO: Perform navbar string replacement */
-  document.getElementById('nav_home_title').innerHTML = strings.navbar.home
-  document.getElementById('nav_actions_title').innerText = strings.navbar.actions
-  document.getElementById('nav_settings_title').innerText = strings.navbar.settings
+  allMainPages.forEach((page) => document.getElementById(`nav_${page}_title`).innerText = strings.navbar[page])
 
   return html
 }
 
 async function getPageScripts(pageId) {
-  return fetch(`js/pages/${pageId}/pageScripts`)
-    .then((response) => response.text())
-    .then((data) => {
-      return data
-    })
-    .catch(() => false)
+  if (miniPageRegex.test(pageId)) {
+    const miniPageIdData = miniPageRegex.exec(pageId)
+    const parentPage = miniPageIdData[1]
+    const miniPage = miniPageIdData[2]
+    return fetch(`js/pages/${parentPage}/minipage/${miniPage}/pageScripts`)
+      .then((response) => response.text())
+      .then((data) => {
+        return data
+      })
+      .catch(() => false)
+  } else {
+    return fetch(`js/pages/${pageId}/pageScripts`)
+      .then((response) => response.text())
+      .then((data) => {
+        return data
+      })
+      .catch(() => false)
+  }
+}
+
+async function getPageCSS(pageId) {
+  if (miniPageRegex.test(pageId)) {
+    const miniPageIdData = miniPageRegex.exec(pageId)
+    const parentPage = miniPageIdData[1]
+    const miniPage = miniPageIdData[2]
+    return await fetch(`js/pages/${parentPage}/minipage/${miniPage}/index.css`)
+      .then((response) => response.text())
+      .then((data) => {
+        return data
+      })
+      .catch(() => false)
+  } else {
+    return fetch(`js/pages/${pageId}/index.css`)
+      .then((response) => response.text())
+      .then((data) => {
+        return data
+      })
+      .catch(() => false)
+  }
+}
+
+function importPageJS(pageId) {
+  if (miniPageRegex.test(pageId)) {
+    const miniPageIdData = miniPageRegex.exec(pageId)
+    const parentPage = miniPageIdData[1]
+    const miniPage = miniPageIdData[2]
+    return import(`./${parentPage}/minipage/${miniPage}/index.js`)
+  } else {
+    return import(`./${pageId}/index.js`)
+  }
+}
+
+function isMiniPage(pageId) {
+  return miniPageRegex.test(pageId)
+}
+
+function isHTMLUnused(page, pageId) {
+  /* INFO: Detect whether this page DOM is currently in the prefixed/inactive state. */
+  if (!page || !page.childNodes) return false
+
+  for (const child of page.childNodes) {
+    if (child.id && child.id.startsWith(`page_${pageId}:`)) return true
+
+    if (child.classList) {
+      for (const className of child.classList) {
+        if (className.startsWith(`page_${pageId}:`)) return true
+      }
+    }
   }
 
-async function hasSpecificCSS(pageId) {
-  return fetch(`js/pages/${pageId}/index.css`)
-    .then(() => true)
-    .catch(() => false)
+  return false
+}
+
+async function initializePage(pageId, pageSpecificContent, shouldApplyHTMLChanges = true) {
+  const module = await importPageJS(pageId)
+
+  if (!sufferedUpdate.includes(pageId)) {
+    pageSpecificContent.innerHTML = await hotReloadStrings(pageSpecificContent.innerHTML, pageId)
+    if (shouldApplyHTMLChanges) applyHTMLChanges(pageSpecificContent, pageId)
+
+    module.onceViewAfterUpdate()
+
+    sufferedUpdate.push(pageId)
+  }
+
+  if (!loadedPageView.includes(pageId)) {
+    pageSpecificContent.innerHTML = await solveStrings(pageSpecificContent.innerHTML, pageId)
+    if (shouldApplyHTMLChanges) applyHTMLChanges(pageSpecificContent, pageId)
+
+    module.loadOnceView()
+
+    loadedPageView.push(pageId)
+  } else if (shouldApplyHTMLChanges) {
+    applyHTMLChanges(pageSpecificContent, pageId)
+  }
+
+  module.load()
 }
 
 function unuseHTML(page, pageId) {
   /* INFO: Remove all event listeners from window */
   utils.removeAllListeners()
+  const pagePrefix = `page_${pageId}:`
 
   if (page.childNodes) page.childNodes.forEach((child) => {
     /* INFO: Append pageId to id and classes */
-    if (child.id) child.id = `page_${pageId}:${child.id}`
+    if (child.id && !child.id.startsWith(pagePrefix)) child.id = `${pagePrefix}${child.id}`
     if (child.classList) {
       const newClasses = []
       if (child.checked) child.classList.add(`--page_loader:checked=true`)
 
       for (const className of child.classList) {
-        newClasses.push(`page_${pageId}:${className}`)
+        if (className.startsWith(pagePrefix)) {
+          newClasses.push(className)
+          continue
+        }
+
+        newClasses.push(`${pagePrefix}${className}`)
       }
 
       child.classList = []
@@ -165,20 +275,16 @@ async function loadPages() {
       pageSpecificContent.id = `${page}_content`
       pageSpecificContent.innerHTML = pageHTML
       pageSpecificContent.style.display = 'none'
+      if (isMiniPage(page)) pageSpecificContent.classList.add('page_loader_mini_layer')
 
       pageContent.appendChild(pageSpecificContent)
       unuseHTML(pageSpecificContent, page)
 
-      const hasCSS = await hasSpecificCSS(page)
-      if (hasCSS) {
+      const cssData = await getPageCSS(page)
+      if (cssData) {
         const cssCode = document.createElement('style')
         cssCode.id = `${page}_css`
-        cssCode.innerHTML = await fetch(`js/pages/${page}/index.css`)
-          .then((response) => response.text())
-          .then((data) => {
-            return data
-          })
-          .catch(() => false)
+        cssCode.innerHTML = cssData
         cssCode.media = 'not all'
 
         head.appendChild(cssCode)
@@ -202,7 +308,7 @@ async function loadPages() {
         first.parentNode.insertBefore(jsCode, first)
       })
 
-      const pageJS = import(`./${page}/index.js`)
+      const pageJS = importPageJS(page)
       pageJS.then((module) => module.loadOnce())
 
       amountLoaded++
@@ -212,14 +318,29 @@ async function loadPages() {
 }
 
 function revertHTMLUnuse(page, pageId) {
+  const pagePrefix = `page_${pageId}:`
+
   if (page.childNodes) page.childNodes.forEach((child) => {
     /* INFO: Remove pageId from id and classes */
-    if (child.id) child.id = child.id.split(`page_${pageId}:`)[1]
+    if (child.id && child.id.startsWith(pagePrefix)) {
+      while (child.id.startsWith(pagePrefix)) {
+        child.id = child.id.slice(pagePrefix.length)
+      }
+    }
+
     if (child.classList) {
       const newClasses = []
 
       for (const className of child.classList) {
-        newClasses.push(className.split(`page_${pageId}:`)[1])
+        let normalizedClassName = className
+
+        while (normalizedClassName.startsWith(pagePrefix)) {
+          normalizedClassName = normalizedClassName.slice(pagePrefix.length)
+        }
+
+        if (normalizedClassName.length > 0) {
+          newClasses.push(normalizedClassName)
+        }
       }
 
       child.classList = []
@@ -257,47 +378,78 @@ function applyHTMLChanges(page, pageId) {
 }
 
 export async function loadPage(pageId) {
+  /* INFO: Ignore navigation to the same page or while another transition is still running. */
   if (whichCurrentPage() === pageId) return false
+  if (isPageTransitioning) return false
 
-  const currentPage = whichCurrentPage()
-  if (currentPage) {
+  isPageTransitioning = true
+
+  try {
+    const currentPage = whichCurrentPage()
+    setNavbar(pageId)
+
+    const targetIsMiniPage = isMiniPage(pageId)
+    const currentIsMiniPage = currentPage ? isMiniPage(currentPage) : false
+    /* INFO: Main-to-main transitions switch CSS at animation midpoint to avoid style conflicts. */
+    const isMainToMain = currentPage && !currentIsMiniPage && !targetIsMiniPage
+    const pageSpecificContent = document.getElementById(`${pageId}_content`)
+    const targetNeedsRevert = isHTMLUnused(pageSpecificContent, pageId)
+
+    if (targetNeedsRevert) revertHTMLUnuse(pageSpecificContent, pageId)
+    if (!isMainToMain) document.getElementById(`${pageId}_css`).media = 'all'
+
+    if (!currentPage) {
+      await initializePage(pageId, pageSpecificContent, targetNeedsRevert)
+      pageSpecificContent.style.display = 'block'
+
+      return true
+    }
+
     const currentPageContent = document.getElementById(`${currentPage}_content`)
-    currentPageContent.style.display = 'none'
 
-    unuseHTML(currentPageContent, currentPage)
-    document.getElementById(`${currentPage}_css`).media = 'not all'
+    if (!currentIsMiniPage && targetIsMiniPage) {
+      await initializePage(pageId, pageSpecificContent, targetNeedsRevert)
+      await runMiniPageEnter(pageSpecificContent)
+      return true
+    }
+
+    if (currentIsMiniPage) {
+      /* INFO: Leaving a mini page always closes its overlay first, then opens the target page. */
+      await runMiniPageLeave(currentPageContent)
+      unuseHTML(currentPageContent, currentPage)
+      document.getElementById(`${currentPage}_css`).media = 'not all'
+
+      await initializePage(pageId, pageSpecificContent, targetNeedsRevert)
+
+      if (targetIsMiniPage) {
+        await runMiniPageEnter(pageSpecificContent)
+      } else {
+        pageSpecificContent.style.display = 'block'
+      }
+
+      return true
+    }
+
+    const transitionDirection = allMainPages.indexOf(pageId) > allMainPages.indexOf(currentPage) ? 1 : -1
+
+    await runMainPageTransition(currentPageContent, pageSpecificContent, transitionDirection, async () => {
+      unuseHTML(currentPageContent, currentPage)
+      document.getElementById(`${currentPage}_css`).media = 'not all'
+      document.getElementById(`${pageId}_css`).media = 'all'
+
+      await initializePage(pageId, pageSpecificContent, targetNeedsRevert)
+    })
+
+    return true
+  } catch (error) {
+    /* INFO: Keep transition errors visible without breaking future navigation attempts. */
+    console.error('Page transition failed:', error)
+    toast('Error while changing page.')
+
+    return false
+  } finally {
+    isPageTransitioning = false
   }
-
-  const pageSpecificContent = document.getElementById(`${pageId}_content`)
-  revertHTMLUnuse(pageSpecificContent, pageId)
-  document.getElementById(`${pageId}_css`).media = 'all'
-
-  setNavbar(pageId)
-
-  const module = await import(`./${pageId}/index.js`)
-  if (!sufferedUpdate.includes(pageId)) {
-    pageSpecificContent.innerHTML = await hotReloadStrings(pageSpecificContent.innerHTML, pageId)
-    applyHTMLChanges(pageSpecificContent, pageId)
-
-    module.onceViewAfterUpdate()
-
-    sufferedUpdate.push(pageId)
-  }
-
-  if (!loadedPageView.includes(pageId)) {
-    pageSpecificContent.innerHTML = await solveStrings(pageSpecificContent.innerHTML, pageId)
-    applyHTMLChanges(pageSpecificContent, pageId)
-
-    module.loadOnceView()
-
-    loadedPageView.push(pageId)
-  } else {
-    applyHTMLChanges(pageSpecificContent, pageId)
-  }
-
-  module.load()
-
-  pageSpecificContent.style.display = 'block'
 }
 
 function getMiniPage(miniPageId) {
@@ -374,30 +526,39 @@ export async function reloadPage() {
   const pageSpecificContent = document.getElementById(`${pageId}_content`)
   pageSpecificContent.innerHTML = await solveStrings(await loadHTML(pageId), pageId)
 
+  const module = await importPageJS(pageId)
+  module.load()
   /* INFO: When reloading the page, due to the way the HTML is reloaded, the JavaScript
              listeners are lost, so we need to reapply them to ensure everything works. */
   utils.reapplyListeners()
 }
 
-export function getStrings(pageId) {
-  return fetch(`lang/${localStorage.getItem('language') || 'en_US'}.json`)
+export function getStrings(pageId, forceDefault = false) {
+  return fetch(`lang/${forceDefault ? 'en_US' : (localStorage.getItem(`/${moduleName}/language`) || 'en_US')}.json`)
     .then((response) => response.json())
     .then((data) => {
       return {
         ...data.pages[pageId],
         ...data.globals,
-        navbar: {
-          home: data.pages.home.title,
-          actions: data.pages.actions.title,
-          settings: data.pages.settings.title
-        }
+        navbar: Object.fromEntries(allPages.map((page) => [page, data.pages[page].title]))
       }
     })
-    .catch(() => false)
+    .catch((err) => {
+       if (!forceDefault) {
+        toast('Error loading strings for the selected language, loading default (en_US) strings.')
+        
+        return getStrings(pageId, true)
+       }
+
+      toast('Error loading default strings!')
+      console.error(`Failed to load default strings for page ${pageId}: `, err)
+
+      return false
+    })
 }
 
 export function setLanguage(langId) {
-  localStorage.setItem('language', langId)
+  localStorage.setItem(`/${moduleName}/language`, langId)
 
   sufferedUpdate.length = 0
 }
@@ -405,25 +566,23 @@ export function setLanguage(langId) {
 (async () => {
   await loadPages()
 
-  let webui_config = await exec('cat /data/adb/treat_wheel/webui_config')
-  if (webui_config.errno !== 0) {
-    toast('Error getting WebUI\'s config of Treat Wheel!')
-
-    return;
-  }
-
-  webui_config = webui_config.stdout
-
-  const WebUIConfig = {
-    disableFullscreen: false
-  }
-
-  webui_config.split('\n').forEach((line) => {
-    if (line.startsWith('disable_fullscreen=')) WebUIConfig.disableFullscreen = line.split('=')[1] === 'true'
-  })
-
-  if (!WebUIConfig.disableFullscreen) fullScreen(true)
-
   loadPage('home')
   loadNavbar()
 })()
+
+/* INFO: Global error handling to catch any unhandled errors and log them to a file for debugging purposes. */
+window.addEventListener('error', function (event) {
+  toast('An error occurred. See log file.')
+
+  console.error('Unhandled error:', event.error)
+
+  exec(`echo "Error: ${event.message}\n\n${event.error.stack}" > /data/adb/rezygisk/webui_error.log`)
+})
+
+window.addEventListener('unhandledrejection', function (event) {
+  toast('An error occurred. See log file.')
+
+  console.error('Unhandled promise rejection:', event.reason)
+
+  exec(`echo "Error (Unhandled Rejection): ${event.reason}\n\n${event.reason.stack}" > /data/adb/rezygisk/webui_error.log`)
+})

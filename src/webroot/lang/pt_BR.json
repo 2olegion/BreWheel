@@ -25,7 +25,7 @@
       },
       "ignoreMode": {
         "title": "Ignorar tudo e todos",
-        "description": "Esta opção fará com que o Treat Wheel seja temporariamente desativado. È possível reativá-lo sem reiniciar, mas fará todos métodos de ocultação de root inúteis até que seja desativado."
+        "description": "Esta opção fará com que o Treat Wheel seja temporariamente desativado. É possível reativá-lo sem reiniciar, mas fará todos métodos de ocultação de root inúteis até que seja desativado."
       },
       "propSpoofing": {
         "title": "Desativar falsificação de props",
@@ -60,7 +60,7 @@
         "description": "Esta opção faz com que o Treat Wheel pare de esconder traços gerados durante o carregamento de alguns módulos."
       },
       "fridaTracesHiding": {
-        "title": "Desativar ocultação de trados do Frida",
+        "title": "Desativar ocultação de traços do Frida",
         "description": "Esta opção faz com que o Treat Wheel pare de esconder traços de injeção feitos pelo Frida."
       }
     },
@@ -76,8 +76,7 @@
       },
       "moduleDevelopers": "Desenvolvedor(es) do módulo",
       "WebUIDevelopers": "Desenvolvedor(es) da WebUI",
-      "moduleLicense": "Licença do módulo",
-      "WebUILicense": "Licença da WebUI"
+      "moduleLicense": "Licença do módulo"
     }
   },
   "globals": {

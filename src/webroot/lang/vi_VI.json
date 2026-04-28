@@ -76,8 +76,7 @@
       },
       "moduleDevelopers": "Nhà phát triển Module",
       "WebUIDevelopers": "Nhà phát triển WebUI",
-      "moduleLicense": "Giấy phép Module",
-      "WebUILicense": "Giấy phép WebUI"
+      "moduleLicense": "Giấy phép Module"
     }
   },
   "globals": {

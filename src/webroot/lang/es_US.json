@@ -76,8 +76,7 @@
       },
       "moduleDevelopers": "Desarrollador(es) del módulo",
       "WebUIDevelopers": "Desarrollador(es) de la interfaz web",
-      "moduleLicense": "Licencia del módulo",
-      "WebUILicense": "Licencia de la interfaz web"
+      "moduleLicense": "Licencia del módulo"
     }
   },
   "globals": {

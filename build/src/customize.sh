@@ -155,9 +155,6 @@ if [ ! -d "/data/adb/treat_wheel" ]; then
   mkdir "/data/adb/treat_wheel"
 
   touch "/data/adb/treat_wheel/state"
-
-  touch "/data/adb/treat_wheel/webui_config"
-  echo "disable_fullscreen=false" >> "/data/adb/treat_wheel/webui_config"
 fi
 
 # INFO: Only append the defaults if they are not already there

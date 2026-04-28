@@ -76,8 +76,7 @@
       },
       "moduleDevelopers": "Module Developer(s)",
       "WebUIDevelopers": "WebUI Developer(s)",
-      "moduleLicense": "Module License",
-      "WebUILicense": "WebUI License"
+      "moduleLicense": "Module License"
     }
   },
   "globals": {

@@ -1,4 +1,5 @@
 /* https://github.com/tiann/KernelSU/tree/main/js / https://www.npmjs.com/package/kernelsu */
+import { getDevelopmentExecResponse } from "./development_kit.js";
 
 let callbackCounter = 0;
 function getUniqueCallbackName(prefix) {
@@ -8,10 +9,7 @@ function getUniqueCallbackName(prefix) {
 export function exec(command, options) {
   if (typeof ksu === "undefined") {
     /* INFO: Assume this is a computer for Treat Wheel testing */
-
-    return new Promise((resolve, reject) => {
-      resolve({ errno: 0, stdout: "OK", stderr: "" });
-    });
+    return getDevelopmentExecResponse(command);
   }
 
   if (typeof options === "undefined") {
