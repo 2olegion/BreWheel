@@ -26,6 +26,10 @@ struct maps *get_global_maps(void) {
   return g_maps;
 }
 
+#define BIONIC_LINE_BUFFER_SIZE 1024
+static char mntent_string[BIONIC_LINE_BUFFER_SIZE];
+static char *mntent_line = NULL;
+
 int do_preinitialize(void) {
   g_maps = parse_maps("/proc/self/maps");
   if (!g_maps) {
@@ -35,39 +39,6 @@ int do_preinitialize(void) {
   }
 
   LOGI("Parsed /proc/self/maps, found %zu maps", g_maps->size);
-
-  return 1;
-}
-
-void do_deinitialize(void) {
-  if (g_maps) {
-    free_maps(g_maps);
-    g_maps = NULL;
-
-    LOGI("Deinitialized /proc/self/maps");
-  }
-}
-
-int do_gsi_hiding(struct api_table *api_table, JNIEnv *tw_env) {
-  (void) api_table; (void) tw_env;
-
-  LOGI("GH: GSI hiding is enabled, hiding traces.");
-
-  if (getenv("PHH_STEP1")) unsetenv("PHH_STEP1");
-  if (getenv("PHH_STEP2")) unsetenv("PHH_STEP2");
-  if (getenv("PHH_STEP3")) unsetenv("PHH_STEP3");
-
-  LOGI("GH: Finished hiding GSI traces.");
-
-  return 1;
-}
-
-#define BIONIC_LINE_BUFFER_SIZE 1024
-
-int do_zygote_mountinfo_leak_hiding(struct api_table *api_table, JNIEnv *tw_env) {
-  (void) api_table; (void) tw_env;
-
-  LOGI("ZMLH: Zygote mountinfo leak hiding is enabled, hiding traces.");
 
   int pipes[2];
   if (pipe(pipes) == -1) {
@@ -129,7 +100,6 @@ int do_zygote_mountinfo_leak_hiding(struct api_table *api_table, JNIEnv *tw_env)
 
   close(pipes[1]);
 
-  char mntent_string[BIONIC_LINE_BUFFER_SIZE];
   if (read(pipes[0], mntent_string, BIONIC_LINE_BUFFER_SIZE) == -1) {
     PLOGE("ZMLH: Read pipe");
 
@@ -138,7 +108,6 @@ int do_zygote_mountinfo_leak_hiding(struct api_table *api_table, JNIEnv *tw_env)
     return 0;
   }
 
-  char *mntent_line;
   if (read(pipes[0], &mntent_line, sizeof(mntent_line)) == -1) {
     PLOGE("ZMLH: Read pipe mntent line");
 
@@ -151,7 +120,44 @@ int do_zygote_mountinfo_leak_hiding(struct api_table *api_table, JNIEnv *tw_env)
 
   waitpid(pid, NULL, 0);
 
-  LOGI("ZMLH: Found line: %s", mntent_string);
+  return 1;
+}
+
+void do_deinitialize(void) {
+  if (g_maps) {
+    free_maps(g_maps);
+    g_maps = NULL;
+
+    LOGI("Deinitialized /proc/self/maps");
+  }
+}
+
+int do_gsi_hiding(struct api_table *api_table, JNIEnv *tw_env) {
+  (void) api_table; (void) tw_env;
+
+  LOGI("GH: GSI hiding is enabled, hiding traces.");
+
+  if (getenv("PHH_STEP1")) unsetenv("PHH_STEP1");
+  if (getenv("PHH_STEP2")) unsetenv("PHH_STEP2");
+  if (getenv("PHH_STEP3")) unsetenv("PHH_STEP3");
+
+  LOGI("GH: Finished hiding GSI traces.");
+
+  return 1;
+}
+
+#define BIONIC_LINE_BUFFER_SIZE 1024
+
+int do_zygote_mountinfo_leak_hiding(struct api_table *api_table, JNIEnv *tw_env) {
+  (void) api_table; (void) tw_env;
+
+  LOGI("ZMLH: Zygote mountinfo leak hiding is enabled, hiding traces.");
+
+  if (!mntent_line) {
+    LOGE("ZMLH: mntent_line is NULL, cannot hide zygote mountinfo leak traces.");
+
+    return 0;
+  }
 
   memcpy(mntent_line, mntent_string, BIONIC_LINE_BUFFER_SIZE);
 
