@@ -1,0 +1,76 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r29
+          add-to-path: true
+
+      - name: Read version from module.prop
+        id: version
+        run: |
+          VERSION=$(grep '^version=' build/module.prop | cut -d'=' -f2)
+          VERSION_CODE=$(grep '^versionCode=' build/module.prop | cut -d'=' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+
+      - name: Build
+        run: IS_GITHUB_ACTION=true make all
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+
+      - name: Rename ZIP
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          mv build/BreWheel.zip "build/BreWheel-${VERSION}.zip"
+          echo "ZIP_NAME=BreWheel-${VERSION}.zip" >> $GITHUB_ENV
+
+      - name: Determine tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "BreWheel ${{ steps.version.outputs.version }}"
+          body: |
+            ## BreWheel ${{ steps.version.outputs.version }} (versionCode ${{ steps.version.outputs.version_code }})
+
+            ### Requirements
+            - Magisk, KernelSU (or API compliant), or APatch
+            - ReZygisk/BreZygisk 508 or higher
+            - Android 7.1+
+
+            ### Installation
+            Flash via KernelSU Manager oder kompatiblen Magisk-Fork.
+          files: build/${{ env.ZIP_NAME }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
